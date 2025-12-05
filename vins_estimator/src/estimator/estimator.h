@@ -135,6 +135,9 @@ class Estimator
     int sum_of_outlier, sum_of_back, sum_of_front, sum_of_invalid;
     int inputImageCnt;
 
+    // map timestamp -> feature tracker duration (ms)
+    std::unordered_map<double, double> featureTrackerDurationMap;
+
     FeatureManager f_manager;
     MotionEstimator m_estimator;
     InitialEXRotation initial_ex_rotation;

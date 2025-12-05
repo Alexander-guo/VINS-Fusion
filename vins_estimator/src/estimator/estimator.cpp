@@ -167,7 +167,17 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
         featureFrame = featureTracker.trackImage(t, _img);
     else
         featureFrame = featureTracker.trackImage(t, _img, _img1);
-    //printf("featureTracker time: %f\n", featureTrackerTime.toc());
+    // printf("timestamp(s): %f\tfeatureTracker time(ms): %f\n", t, featureTrackerTime.toc());
+    double featureTrackerDuration = featureTrackerTime.toc();
+
+    // Store the feature-tracker duration with the timestamp and defer file I/O
+    // to the processing thread so the processing time can be logged with
+    // the same timestamp.
+    
+    mBuf.lock();
+    featureTrackerDurationMap[t] = featureTrackerDuration;
+    mBuf.unlock();
+    
 
     if (SHOW_TRACK)
     {
@@ -298,6 +308,9 @@ void Estimator::processMeasurements()
             featureBuf.pop();
             mBuf.unlock();
 
+            // Measure processing time per-frame in the background thread
+            TicToc processTime;
+
             if(USE_IMU)
             {
                 if(!initFirstPoseFlag)
@@ -331,6 +344,35 @@ void Estimator::processMeasurements()
             pubKeyframe(*this);
             pubTF(*this, header);
             mProcess.unlock();
+
+            // Print processing time here so behavior matches single-thread mode
+            double proc_ms = processTime.toc();
+            // printf("estimation process time(ms): %f\n", proc_ms);
+
+            // Try to find the feature-tracker duration recorded earlier (if any)
+            double ft_dur = -1.0;
+        
+            std::lock_guard<std::mutex> lk(mBuf);
+            auto it = featureTrackerDurationMap.find(feature.first);
+            if (it != featureTrackerDurationMap.end())
+            {
+                ft_dur = it->second;
+                featureTrackerDurationMap.erase(it);
+            }
+
+            // Append a CSV row: timestamp, featureTrackerDuration(ms or 0), processTime(ms)
+            ofstream foutC(VINS_TIME_RESULT_PATH, ios::app);
+            foutC.setf(ios::fixed, ios::floatfield);
+            foutC.precision(5);
+            foutC << feature.first << ",";
+            foutC.precision(6);
+            if (ft_dur >= 0.0)
+                foutC << ft_dur << ",";
+            else
+                foutC << 0.0 << ",";
+            foutC.precision(6);
+            foutC << proc_ms << "," << (ft_dur + proc_ms) << std::endl;
+            foutC.close();
         }
 
         if (! MULTIPLE_THREAD)
@@ -577,6 +619,29 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     }  
 }
 
+/**
+ * @brief Initialize visual-inertial structure using global SFM and visual-IMU alignment.
+ *
+ * This routine attempts to build a globally consistent structure from the
+ * collected image frames and IMU pre-integration data stored in
+ * `all_image_frame`. The steps include:
+ *  - Check IMU excitation / observability across collected frames.
+ *  - Build SFM feature tracks and run a global structure-from-motion to
+ *    recover relative camera poses and 3D points.
+ *  - Solve PnP for intermediate (non-key) frames using the reconstructed
+ *    3D points.
+ *  - Run visual-IMU alignment (scale, gravity and velocity estimation) via
+ *    `visualInitialAlign()` and propagate the results into the estimator
+ *    state (e.g. `Ps`, `Rs`, pre-integrations, depths in `f_manager`).
+ *
+ * Side effects:
+ *  - Updates internal pose arrays (`Ps`, `Rs`), pre-integration data and
+ *    feature manager depth estimates.
+ *  - May set `marginalization_flag` and populate `sfm_tracked_points`.
+ *
+ * @return true if initialization and visual-IMU alignment succeeded and the
+ *         estimator can switch to the non-linear solver; false otherwise.
+ */
 bool Estimator::initialStructure()
 {
     TicToc t_sfm;
@@ -723,6 +788,25 @@ bool Estimator::initialStructure()
 
 }
 
+/**
+ * @brief Align the visual structure to IMU measurements and recover scale.
+ *
+ * Runs Visual-IMU alignment to estimate scale, gravity direction and initial
+ * velocities by calling `VisualIMUAlignment` on the buffered image frames
+ * (`all_image_frame`) and IMU biases (`Bgs`). On success the function:
+ *  - updates pose arrays (`Ps`, `Rs`) and flags frames as key frames,
+ *  - rescales the reconstructed structure, repropagates IMU pre-integrations,
+ *  - computes per-frame velocities, and rotates the coordinate frame to
+ *    align with gravity.
+ *
+ * Side effects:
+ *  - modifies estimator state (poses, velocities, pre-integrations, gravity
+ *    vector `g` and feature depths inside `f_manager`).
+ *  - triangulates features again via `f_manager.triangulate`.
+ *
+ * @return true if visual-IMU alignment succeeds and the estimator state is
+ *         consistent; false on failure (e.g. Visual-IMU solve failed).
+ */
 bool Estimator::visualInitialAlign()
 {
     TicToc t_g;
@@ -1001,6 +1085,41 @@ bool Estimator::failureDetection()
     return false;
 }
 
+/**
+ * @brief Perform non-linear optimization on the current sliding window.
+ *
+ * Constructs a Ceres problem with IMU pre-integration factors, visual
+ * reprojection residuals, marginalization priors and optional extrinsic/
+ * time-delay parameters, then solves for camera poses, velocities, IMU
+ * biases, feature depths and (when enabled) extrinsic calibration.
+ *
+ * Main actions performed by this method:
+ *  - Convert internal state to parameter vectors via `vector2double()`.
+ *  - Add parameter blocks (poses, speed & bias, extrinsics, time-delay).
+ *  - Add residuals: IMU factors, visual projection factors (mono/stereo),
+ *    and an existing marginalization prior when available.
+ *  - Solve the optimization using a Ceres solver and update state with
+ *    `double2vector()`.
+ *  - Build/update marginalization information (`last_marginalization_info`)
+ *    to keep a fixed-size sliding window for future optimizations.
+ *
+ * Side effects:
+ *  - Updates estimator state (poses `Ps`, rotations `Rs`, velocities `Vs`,
+ *    biases `Bas`/`Bgs`, feature depths) through `double2vector()`.
+ *  - Allocates and may replace `last_marginalization_info` and
+ *    `last_marginalization_parameter_blocks`.
+ *  - Honors flags such as `USE_IMU`, `STEREO`, `ESTIMATE_TD` and
+ *    `ESTIMATE_EXTRINSIC` when forming the problem.
+ *
+ * Notes:
+ *  - The method uses a Huber loss for visual residuals and a DENSE_SCHUR
+ *    linear solver. Solver runtime is constrained by `SOLVER_TIME`.
+ *  - If `frame_count < WINDOW_SIZE` the function returns early after solving
+ *    without performing full marginalization.
+ *
+ * @see vector2double(), double2vector(), MarginalizationInfo,
+ *      ProjectionTwoFrameOneCamFactor, IMUFactor
+ */
 void Estimator::optimization()
 {
     TicToc t_whole, t_prepare;
@@ -1326,6 +1445,26 @@ void Estimator::optimization()
     //printf("whole time for ceres: %f \n", t_whole.toc());
 }
 
+/**
+ * @brief Slide the estimator's fixed-size window and perform marginalization.
+ *
+ * Moves the sliding window forward by removing either the oldest frame or
+ * the second-newest frame depending on `marginalization_flag`. This updates
+ * timestamp headers and shifts internal state buffers (poses, velocities,
+ * biases and IMU pre-integration data). It also erases marginalized image
+ * frames from `all_image_frame` and delegates depth/shift handling to
+ * `slideWindowOld()` or front removal to `slideWindowNew()`.
+ *
+ * Side effects:
+ *  - modifies `Headers`, `Ps`, `Rs`, `Vs`, `Bas`, `Bgs`, `pre_integrations`,
+ *    and associated IMU buffers (`dt_buf`, `linear_acceleration_buf`,
+ *    `angular_velocity_buf`).
+ *  - may delete `pre_integration` objects for removed frames.
+ *
+ * Notes:
+ *  - The function performs a full slide only when `frame_count == WINDOW_SIZE`.
+ *  - Called after optimization when the window must stay fixed-size.
+ */
 void Estimator::slideWindow()
 {
     TicToc t_margin;
