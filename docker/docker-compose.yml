@@ -39,7 +39,7 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/home/${USER}/.Xauthority:rw
 
-      # dataset mount, put your data into ./dataset
+      # dataset mount, modify as needed 
       - ${HOME}/media/data:/media/data:rw
 
     command: [ "bash" ]
