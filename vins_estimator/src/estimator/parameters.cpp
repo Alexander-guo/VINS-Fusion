@@ -8,6 +8,10 @@
  *******************************************************/
 
 #include "parameters.h"
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <unistd.h>
 
 double INIT_DEPTH;
 double MIN_PARALLAX;
@@ -28,6 +32,7 @@ int ESTIMATE_TD;
 int ROLLING_SHUTTER;
 std::string EX_CALIB_RESULT_PATH;
 std::string VINS_RESULT_PATH;
+std::string VINS_TIME_RESULT_PATH;
 std::string OUTPUT_FOLDER;
 std::string IMU_TOPIC;
 int ROW, COL;
@@ -108,10 +113,64 @@ void readParameters(std::string config_file)
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
     fsSettings["output_path"] >> OUTPUT_FOLDER;
-    VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
+
+    // Ensure OUTPUT_FOLDER exists. Use POSIX mkdir to avoid requiring
+    // C++17 <filesystem> support in every build environment.
+    if (!OUTPUT_FOLDER.empty())
+    {
+        std::string dir = OUTPUT_FOLDER;
+        // remove trailing slash for consistent behavior (but keep root "/")
+        if (dir.size() > 1 && dir.back() == '/')
+            dir.pop_back();
+
+        struct stat st;
+        size_t pos = 0;
+        // create each path component if it doesn't exist
+        while (true)
+        {
+            pos = dir.find('/', pos + 1);
+            std::string sub = dir.substr(0, pos == std::string::npos ? dir.size() : pos);
+            if (sub.empty())
+            {
+                if (pos == std::string::npos)
+                    break;
+                continue;
+            }
+            if (stat(sub.c_str(), &st) != 0)
+            {
+                if (mkdir(sub.c_str(), 0755) != 0)
+                {
+                    if (errno != EEXIST)
+                    {
+                        ROS_WARN("Could not create directory %s (errno=%d)", sub.c_str(), errno);
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                if (!S_ISDIR(st.st_mode))
+                {
+                    ROS_WARN("%s exists and is not a directory", sub.c_str());
+                    break;
+                }
+            }
+            if (pos == std::string::npos)
+                break;
+        }
+    }
+
+    VINS_RESULT_PATH = OUTPUT_FOLDER + "/" + "vio.txt";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
+    fout << "#timestamp(sec), tx, ty, tz, qx, qy, qz, qw" << std::endl;
     fout.close();
+
+    VINS_TIME_RESULT_PATH = OUTPUT_FOLDER + "/" + "vio_time.txt";
+    std::cout << "result path " << VINS_TIME_RESULT_PATH << std::endl;
+    std::ofstream fout_time(VINS_TIME_RESULT_PATH, std::ios::out);
+    fout_time << "#timestamp(sec), tracking_time(ms), estimation_time(ms), total(ms)" << std::endl;
+    fout_time.close();
 
     ESTIMATE_EXTRINSIC = fsSettings["estimate_extrinsic"];
     if (ESTIMATE_EXTRINSIC == 2)
