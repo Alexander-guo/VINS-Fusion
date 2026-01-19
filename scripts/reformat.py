@@ -9,7 +9,7 @@ import sys
 import re
 
 
-def reformat_file(filepath):
+def reformat_file(filepath, ts=None):
     """
     Read a text file, replace ',' and ', ' separators with single space,
     and overwrite the original file.
@@ -24,6 +24,12 @@ def reformat_file(filepath):
             # Replace ', ' with ' ' first, then standalone ','
             line = line.replace(', ', ' ')
             line = line.replace(',', ' ')
+            if ts is not None:
+                # Reformat timestamp if applicable
+                parts = line.split()
+                if parts:
+                    parts[0] = reformat_timestamp(parts[0], ts)
+                    line = ' '.join(parts) + '\n'
             reformatted_lines.append(line)
         
         # Write back to the same file
@@ -55,6 +61,9 @@ def inverse_reformat_file(filepath):
             stripped = line.rstrip('\n')
             parts = stripped.split()
             if parts:  # Only reformat if line has content
+                if ts is not None:
+                    # Reformat timestamp if applicable
+                    parts[0] = reformat_timestamp(parts[0], ts)
                 reformatted_line = ','.join(parts) + '\n'
             else:
                 reformatted_line = line  # Keep empty lines as-is
@@ -70,6 +79,23 @@ def inverse_reformat_file(filepath):
     except Exception as e:
         print(f"Error processing {filepath}: {e}")
         return False
+
+
+def reformat_timestamp(part, ts):
+    """
+    Reformat a timestamp string by to second.
+    """
+    try:
+        timestamp = float(part)
+        if ts == 'ms':
+            timestamp /= 1e3
+        elif ts == 'us':
+            timestamp /= 1e6
+        elif ts == 'ns':
+            timestamp /= 1e9
+        return str(timestamp)
+    except ValueError:
+        return part  # Return original if conversion fails
 
 
 def reformat_directory(directory_path):
@@ -94,9 +120,12 @@ def reformat_directory(directory_path):
     
     print(f"Found {len(txt_files)} .txt file(s) in {directory_path} (including subdirectories)")
     
+    if ts is not None:
+        print(f"Reformatting timestamps from {ts} to seconds")
+
     success_count = 0
     for filepath in txt_files:
-        if reformat_file(filepath):
+        if reformat_file(filepath, ts):
             success_count += 1
     
     print(f"\nCompleted: {success_count}/{len(txt_files)} files reformatted successfully")
@@ -133,14 +162,25 @@ def inverse_reformat_directory(directory_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 reformat.py <directory_path> [--inverse]")
-        print("  <directory_path>: Path to directory containing .txt files")
-        print("  --inverse: Convert spaces to commas (default: convert commas to spaces)")
-        sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser(description="Reformat .txt files by replacing comma separators with spaces or vice versa.")
+    parser.add_argument("directory_path", help="Path to directory containing .txt files")
+    parser.add_argument("--inverse", action="store_true", help="Convert spaces to commas instead of commas to spaces")
+    parser.add_argument("--ts", type=str, default=None, help="Reformat timestamps from current unit (ms, us, ns) to the unit of seconds.")
+    args = parser.parse_args()
     
-    directory_path = sys.argv[1]
-    use_inverse = '--inverse' in sys.argv
+    # if len(sys.argv) < 2:
+    #     print("Usage: python3 reformat.py <directory_path> [--inverse]")
+    #     print("  <directory_path>: Path to directory containing .txt files")
+    #     print("  --inverse: Convert spaces to commas (default: convert commas to spaces)")
+    #     print("  --ts: Reformat timestamps from current unit (ms, us, ns) to the unit of seconds.")
+    #     sys.exit(1)
+    
+    # directory_path = sys.argv[1]
+    # use_inverse = '--inverse' in sys.argv
+    directory_path = args.directory_path
+    use_inverse = args.inverse
+    ts = args.ts
     
     if use_inverse:
         inverse_reformat_directory(directory_path)
