@@ -99,7 +99,7 @@ void Estimator::setParameter()
     {
         tic[i] = TIC[i];
         ric[i] = RIC[i];
-        cout << " exitrinsic cam " << i << endl  << ric[i] << endl << tic[i].transpose() << endl;
+        cout << " extrinsic cam " << i << endl  << ric[i] << endl << tic[i].transpose() << endl;
     }
     f_manager.setRic(ric);
     ProjectionTwoFrameOneCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
@@ -967,7 +967,7 @@ void Estimator::double2vector()
                                                           para_Pose[0][4],
                                                           para_Pose[0][5]).toRotationMatrix());
         double y_diff = origin_R0.x() - origin_R00.x();
-        //TODO
+
         Matrix3d rot_diff = Utility::ypr2R(Vector3d(y_diff, 0, 0));
         if (abs(abs(origin_R0.y()) - 90) < 1.0 || abs(abs(origin_R00.y()) - 90) < 1.0)
         {

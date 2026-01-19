@@ -2,14 +2,36 @@
 
 DATASET_BAG_PATH=$1
 WS_PATH="/home/ws"
-EUROC_CONFIG_PATH="${WS_PATH}/src/VINS-Fusion/config/uzhfpv"
+UZHFPV_CONFIG_PATH="${WS_PATH}/src/VINS-Fusion/config/uzhfpv"
+
+process_sequence_pair() {
+    local bag_file="$1"
+    local config_mono="$2"
+    local config_stereo="$3"
+
+    # run mono imu setting
+    is_mono_imu=true 
+    run_VINS_FUSION "${config_mono}" "${bag_file}" "${is_mono_imu}"
+    echo "Completed mono imu setting for ${bag_file}"
+    sleep 4
+
+    # run stereo imu setting 
+    is_mono_imu=false
+    run_VINS_FUSION "${config_stereo}" "${bag_file}" "${is_mono_imu}"
+    echo "Completed stereo imu setting for ${bag_file}"
+    sleep 4
+}
 
 run_VINS_FUSION() {
     local config_file="$1"
     local bag_file="$2"
+    local is_mono_imu="$3"
+
+    config_base_name=$(basename "${config_file}" .yaml)
+    bag_name=$(basename "${bag_file}" .bag)
 
     # start roslaunch in background and capture its PID
-    roslaunch vins vins_rviz.launch >"${WS_PATH}/logs/vins_launch.${config_base_name}.log" 2>&1 &
+    roslaunch vins vins_rviz.launch >"${WS_PATH}/logs/vins_launch.${bag_name}.${config_base_name}.log" 2>&1 &
     LAUNCH_PID=$!
 
     # wait a short while for ROS master to come up (with timeout)
@@ -18,7 +40,7 @@ run_VINS_FUSION() {
         sleep 0.1
         START_WAIT=$((START_WAIT+1))
         if [ ${START_WAIT} -gt 100 ]; then
-            echo "roslaunch did not start properly (pid=${LAUNCH_PID}). Check ${WS_PATH}/logs/vins_launch.${config_base_name}.log"
+            echo "roslaunch did not start properly (pid=${LAUNCH_PID}). Check ${WS_PATH}/logs/vins_launch.${bag_name}.${config_base_name}.log"
             kill ${LAUNCH_PID} >/dev/null 2>&1 || true
             return 1
         fi
@@ -27,11 +49,8 @@ run_VINS_FUSION() {
     sleep 4  # additional wait to ensure everything is up
 
     # start vins node in background
-    rosrun vins vins_node "${config_file}" >"${WS_PATH}/logs/vins_node.${config_base_name}.log" 2>&1 &
+    rosrun vins vins_node "${config_file}" >"${WS_PATH}/logs/vins_node.${bag_name}.${config_base_name}.log" 2>&1 &
     NODE_PID=$!
-
-    # # ensure output directory exists
-    # mkdir -p "${WS_PATH}/output"
 
     sleep 4  # wait for vins node to initialize
 
@@ -50,22 +69,26 @@ run_VINS_FUSION() {
     kill ${NODE_PID} >/dev/null 2>&1 || true
     kill ${LAUNCH_PID} >/dev/null 2>&1 || true
 
-    # remove trailing "_config" if present
-    config_base_name=$(basename "${config_file}" .yaml)
-    config_base_name=${config_base_name%_config}
-    bag_name=$(basename "${bag_file}" .bag)
+    # Determine output directories based on configuration
+    if [ "${is_mono_imu}" = true ]; then
+        POSE_DIR="${WS_PATH}/output/pose/VINS-Fusion_MonoIMU/${bag_name}"
+        TIME_DIR="${WS_PATH}/output/time/VINS-Fusion_MonoIMU/${bag_name}"
+    else
+        POSE_DIR="${WS_PATH}/output/pose/VINS-Fusion_StereoIMU/${bag_name}"
+        TIME_DIR="${WS_PATH}/output/time/VINS-Fusion_StereoIMU/${bag_name}"
+    fi
 
-    # split bag_name by '_' and take the third field, which indicates the sequence index
-    bag_name=$(echo "${bag_name}" | awk -F'_' '{print $3}')
+    # Create directories if they don't exist
+    mkdir -p "${POSE_DIR}" "${TIME_DIR}"
 
-    # rename output files if they exist
+    # Move output files if they exist
     if [ -f "${WS_PATH}/output/vio.txt" ]; then
-        mv "${WS_PATH}/output/vio.txt" "${WS_PATH}/output/vio_${config_base_name}_${bag_name}.txt"
+        mv "${WS_PATH}/output/vio.txt" "${POSE_DIR}/vio.txt"
     else
         echo "Warning: ${WS_PATH}/output/vio.txt not found"
     fi
     if [ -f "${WS_PATH}/output/vio_time.txt" ]; then
-        mv "${WS_PATH}/output/vio_time.txt" "${WS_PATH}/output/vio_time_${config_base_name}_${bag_name}.txt"
+        mv "${WS_PATH}/output/vio_time.txt" "${TIME_DIR}/vio_time.txt"
     else
         echo "Warning: ${WS_PATH}/output/vio_time.txt not found"
     fi
@@ -74,66 +97,40 @@ run_VINS_FUSION() {
 cd "${WS_PATH}" || exit 1
 source devel/setup.bash
 
+if [ ! -d "${WS_PATH}/output" ]; then
+    mkdir -p "${WS_PATH}/output"
+fi
+
 for bag_file in ${DATASET_BAG_PATH}/*.bag; do
     echo "Running bag file: ${bag_file}"
     
     bag_name=$(basename "${bag_file}" .bag)
 
-    if [[ ${bag_name} == indoor_45* ]]; then
-        # run mono imu setting for indoor_45 bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_indoor_45_mono_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed mono imu setting for ${bag_file}"
-        sleep 4
-
-        # run stereo imu setting for indoor_45 bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_indoor_45_stereo_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed stereo imu setting for ${bag_file}"
-        sleep 4
-    fi
-
-    if [[ ${bag_name} == outdoor_45* ]]; then
-        # run mono imu setting for outdoor_45 bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_outdoor_45_mono_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed mono imu setting for ${bag_file}"
-        sleep 4
-
-        # run stereo imu setting for outdoor_45 bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_outdoor_45_stereo_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed stereo imu setting for ${bag_file}"
-        sleep 4
-    fi
-    
-    if [[ ${bag_name} == indoor_forward* ]]; then
-        # run mono imu setting for indoor_forward bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_indoor_fwd_mono_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed mono imu setting for ${bag_file}"
-        sleep 4
-
-        # run stereo imu setting for indoor_forward bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_indoor_fwd_stereo_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed stereo imu setting for ${bag_file}"
-        sleep 4
-    fi
-
-    if [[ ${bag_name} == outdoor_forward* ]]; then
-        # run mono imu setting for outdoor_forward bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_outdoor_fwd_mono_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed mono imu setting for ${bag_file}"
-        sleep 4
-
-        # run stereo imu setting for outdoor_forward bags
-        config_file=${EUROC_CONFIG_PATH}/uzhfpv_outdoor_fwd_stereo_imu_config.yaml
-        run_VINS_FUSION "${config_file}" "${bag_file}"
-        echo "Completed stereo imu setting for ${bag_file}"
-        sleep 4
-    fi
+    case "${bag_name}" in
+        indoor_45*)
+            process_sequence_pair "${bag_file}" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_indoor_45_mono_imu_config.yaml" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_indoor_45_stereo_imu_config.yaml"
+            ;;
+        outdoor_45*)
+            process_sequence_pair "${bag_file}" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_outdoor_45_mono_imu_config.yaml" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_outdoor_45_stereo_imu_config.yaml"
+            ;;
+        indoor_forward*)
+            process_sequence_pair "${bag_file}" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_indoor_fwd_mono_imu_config.yaml" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_indoor_fwd_stereo_imu_config.yaml"
+            ;;
+        outdoor_forward*)
+            process_sequence_pair "${bag_file}" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_outdoor_fwd_mono_imu_config.yaml" \
+                "${UZHFPV_CONFIG_PATH}/uzhfpv_outdoor_fwd_stereo_imu_config.yaml"
+            ;;
+        *)
+            echo "Warning: unknown sequence pattern for ${bag_name}, skipping"
+            ;;
+    esac
 done
 
 echo "All bag files processed."

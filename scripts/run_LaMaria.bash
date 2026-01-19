@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# # Add this line to avoid port 11311 conflict with VS Code
+# export ROS_MASTER_URI=http://localhost:11312
+
 DATASET_PATH=$1
 WS_PATH="/home/ws"
 LAMARIA_CONFIG_PATH="${WS_PATH}/src/VINS-Fusion/config/lamaria"
@@ -9,8 +12,11 @@ run_VINS_FUSION() {
     local bag_file="$2"
     local is_mono_imu="$3"
 
+    config_base_name=$(basename "${config_file}" .yaml)
+    bag_name=$(basename "${bag_file}" .bag)
+
     # start roslaunch in background and capture its PID
-    roslaunch vins vins_rviz.launch >"${WS_PATH}/logs/vins_launch.${config_base_name}.log" 2>&1 &
+    roslaunch vins vins_rviz.launch >"${WS_PATH}/logs/vins_launch.${bag_name}.${config_base_name}.log" 2>&1 &
     LAUNCH_PID=$!
 
     # wait a short while for ROS master to come up (with timeout)
@@ -19,7 +25,7 @@ run_VINS_FUSION() {
         sleep 0.1
         START_WAIT=$((START_WAIT+1))
         if [ ${START_WAIT} -gt 100 ]; then
-            echo "roslaunch did not start properly (pid=${LAUNCH_PID}). Check ${WS_PATH}/logs/vins_launch.${config_base_name}.log"
+            echo "roslaunch did not start properly (pid=${LAUNCH_PID}). Check ${WS_PATH}/logs/vins_launch.${bag_name}.${config_base_name}.log"
             kill ${LAUNCH_PID} >/dev/null 2>&1 || true
             return 1
         fi
@@ -28,11 +34,8 @@ run_VINS_FUSION() {
     sleep 3  # additional wait to ensure everything is up
 
     # start vins node in background
-    rosrun vins vins_node "${config_file}" >"${WS_PATH}/logs/vins_node.${config_base_name}.log" 2>&1 &
+    rosrun vins vins_node "${config_file}" >"${WS_PATH}/logs/vins_node.${bag_name}.${config_base_name}.log" 2>&1 &
     NODE_PID=$!
-
-    # # ensure output directory exists
-    # mkdir -p "${WS_PATH}/output"
 
     sleep 4  # wait for vins node to initialize
 
@@ -50,8 +53,6 @@ run_VINS_FUSION() {
     # stop vins node and roslaunch
     kill ${NODE_PID} >/dev/null 2>&1 || true
     kill ${LAUNCH_PID} >/dev/null 2>&1 || true
-
-    bag_name=$(basename "${bag_file}" .bag)
 
     # Determine output directories based on configuration
     if [ "${is_mono_imu}" = true ]; then
@@ -81,6 +82,10 @@ run_VINS_FUSION() {
 cd "${WS_PATH}" || exit 1
 source devel/setup.bash
 
+if [ ! -d "${WS_PATH}/output" ]; then
+    mkdir -p "${WS_PATH}/output"
+fi
+
 for data_seq in ${DATASET_PATH}/*; do
     [ ! -d "${data_seq}" ] && continue
     
@@ -97,7 +102,6 @@ for data_seq in ${DATASET_PATH}/*; do
     fi
 
     echo "Running bag file: ${bag_file}"
-
     
     # # run stereo imu setting
     # if [[ ${bag_name} == R_*_hard ]] || [[ ${bag_name} == sequence_1_* ]]; then
