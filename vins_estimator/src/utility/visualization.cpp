@@ -158,7 +158,7 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
 
         // print timestamp in seconds with 5 digits after the decimal point
         foutC.precision(5);
-        foutC << header.stamp.toSec() << ",";
+        foutC << header.stamp.toSec() << " ";
         
         foutC.precision(6);
         foutC << estimator.Ps[WINDOW_SIZE].x() << " "
