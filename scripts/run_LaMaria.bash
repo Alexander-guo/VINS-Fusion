@@ -117,7 +117,7 @@ for data_seq in ${DATASET_PATH}/*; do
 
     # run mono imu setting
     if [[ ${bag_name} == R_*_hard ]] || [[ ${bag_name} == sequence_1_* ]]; then
-        # use different config for LaMaria_Indoor bags
+        # use different config for LaMaria bags
         config_file=${LAMARIA_CONFIG_PATH}/mono_imu_config2.yaml
     else
         config_file=${LAMARIA_CONFIG_PATH}/mono_imu_config1.yaml
