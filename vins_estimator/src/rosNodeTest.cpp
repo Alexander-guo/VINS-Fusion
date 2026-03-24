@@ -16,6 +16,7 @@
 #include <mutex>
 #include <ros/ros.h>
 #include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/CompressedImage.h>
 #include <opencv2/opencv.hpp>
 #include "estimator/estimator.h"
 #include "estimator/parameters.h"
@@ -25,22 +26,38 @@ Estimator estimator;
 
 queue<sensor_msgs::ImuConstPtr> imu_buf;
 queue<sensor_msgs::PointCloudConstPtr> feature_buf;
-queue<sensor_msgs::ImageConstPtr> img0_buf;
-queue<sensor_msgs::ImageConstPtr> img1_buf;
+struct ImageData
+{
+    double stamp;
+    cv::Mat image;
+};
+queue<ImageData> img0_buf;
+queue<ImageData> img1_buf;
 std::mutex m_buf;
+
+cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg);
+cv::Mat getImageFromMsg(const sensor_msgs::CompressedImageConstPtr &img_msg);
 
 
 void img0_callback(const sensor_msgs::ImageConstPtr &img_msg)
 {
+    cv::Mat img = getImageFromMsg(img_msg);
+    if (img.empty())
+        return;
+
     m_buf.lock();
-    img0_buf.push(img_msg);
+    img0_buf.push({img_msg->header.stamp.toSec(), img});
     m_buf.unlock();
 }
 
 void img1_callback(const sensor_msgs::ImageConstPtr &img_msg)
 {
+    cv::Mat img = getImageFromMsg(img_msg);
+    if (img.empty())
+        return;
+
     m_buf.lock();
-    img1_buf.push(img_msg);
+    img1_buf.push({img_msg->header.stamp.toSec(), img});
     m_buf.unlock();
 }
 
@@ -67,6 +84,63 @@ cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg)
     return img;
 }
 
+cv::Mat getImageFromMsg(const sensor_msgs::CompressedImageConstPtr &img_msg)
+{
+    cv::Mat compressed(1, img_msg->data.size(), CV_8UC1, const_cast<uchar *>(img_msg->data.data()));
+    cv::Mat decoded = cv::imdecode(compressed, cv::IMREAD_UNCHANGED);
+
+    if (decoded.empty())
+    {
+        ROS_WARN("failed to decode compressed image at time %f", img_msg->header.stamp.toSec());
+        return cv::Mat();
+    }
+
+    cv::Mat gray;
+    if (decoded.channels() == 1)
+        gray = decoded;
+    else if (decoded.channels() == 3)
+        cv::cvtColor(decoded, gray, cv::COLOR_BGR2GRAY);
+    else if (decoded.channels() == 4)
+        cv::cvtColor(decoded, gray, cv::COLOR_BGRA2GRAY);
+    else
+    {
+        ROS_WARN("unsupported channel count in compressed image: %d", decoded.channels());
+        return cv::Mat();
+    }
+
+    if (gray.type() == CV_8UC1)
+        return gray;
+
+    cv::Mat gray8;
+    if (gray.depth() == CV_16U)
+        gray.convertTo(gray8, CV_8UC1, 1.0 / 256.0);
+    else
+        gray.convertTo(gray8, CV_8UC1);
+    return gray8;
+}
+
+void img0_compressed_callback(const sensor_msgs::CompressedImageConstPtr &img_msg)
+{
+    cv::Mat img = getImageFromMsg(img_msg);
+    if (img.empty())
+        return;
+
+    m_buf.lock();
+    img0_buf.push({img_msg->header.stamp.toSec(), img});
+    m_buf.unlock();
+}
+
+void img1_compressed_callback(const sensor_msgs::CompressedImageConstPtr &img_msg)
+{
+    cv::Mat img = getImageFromMsg(img_msg);
+    if (img.empty())
+        return;
+
+    m_buf.lock();
+    img1_buf.push({img_msg->header.stamp.toSec(), img});
+    m_buf.unlock();
+}
+
 // extract images with same timestamp from two topics
 void sync_process()
 {
@@ -75,13 +149,12 @@ void sync_process()
         if(STEREO)
         {
             cv::Mat image0, image1;
-            std_msgs::Header header;
             double time = 0;
             m_buf.lock();
             if (!img0_buf.empty() && !img1_buf.empty())
             {
-                double time0 = img0_buf.front()->header.stamp.toSec();
-                double time1 = img1_buf.front()->header.stamp.toSec();
+                double time0 = img0_buf.front().stamp;
+                double time1 = img1_buf.front().stamp;
                 // 0.003s sync tolerance
                 if(time0 < time1 - 0.003)
                 {
@@ -95,11 +168,10 @@ void sync_process()
                 }
                 else
                 {
-                    time = img0_buf.front()->header.stamp.toSec();
-                    header = img0_buf.front()->header;
-                    image0 = getImageFromMsg(img0_buf.front());
+                    time = img0_buf.front().stamp;
+                    image0 = img0_buf.front().image;
                     img0_buf.pop();
-                    image1 = getImageFromMsg(img1_buf.front());
+                    image1 = img1_buf.front().image;
                     img1_buf.pop();
                     //printf("find img0 and img1\n");
                 }
@@ -111,14 +183,12 @@ void sync_process()
         else
         {
             cv::Mat image;
-            std_msgs::Header header;
             double time = 0;
             m_buf.lock();
             if(!img0_buf.empty())
             {
-                time = img0_buf.front()->header.stamp.toSec();
-                header = img0_buf.front()->header;
-                image = getImageFromMsg(img0_buf.front());
+                time = img0_buf.front().stamp;
+                image = img0_buf.front().image;
                 img0_buf.pop();
             }
             m_buf.unlock();
@@ -255,11 +325,30 @@ int main(int argc, char **argv)
         sub_imu = n.subscribe(IMU_TOPIC, 2000, imu_callback, ros::TransportHints().tcpNoDelay());
     }
     ros::Subscriber sub_feature = n.subscribe("/feature_tracker/feature", 2000, feature_callback);
-    ros::Subscriber sub_img0 = n.subscribe(IMAGE0_TOPIC, 100, img0_callback);
+    bool img0_is_compressed = IMAGE0_TOPIC.find("compressed") != string::npos;
+    ros::Subscriber sub_img0;
+    if(img0_is_compressed)
+    {
+        ROS_INFO("subscribe compressed image topic: %s", IMAGE0_TOPIC.c_str());
+        sub_img0 = n.subscribe(IMAGE0_TOPIC, 100, img0_compressed_callback);
+    }
+    else
+    {
+        sub_img0 = n.subscribe(IMAGE0_TOPIC, 100, img0_callback);
+    }
     ros::Subscriber sub_img1;
     if(STEREO)
     {
-        sub_img1 = n.subscribe(IMAGE1_TOPIC, 100, img1_callback);
+        bool img1_is_compressed = IMAGE1_TOPIC.find("compressed") != string::npos;
+        if(img1_is_compressed)
+        {
+            ROS_INFO("subscribe compressed image topic: %s", IMAGE1_TOPIC.c_str());
+            sub_img1 = n.subscribe(IMAGE1_TOPIC, 100, img1_compressed_callback);
+        }
+        else
+        {
+            sub_img1 = n.subscribe(IMAGE1_TOPIC, 100, img1_callback);
+        }
     }
     ros::Subscriber sub_restart = n.subscribe("/vins_restart", 100, restart_callback);
     ros::Subscriber sub_imu_switch = n.subscribe("/vins_imu_switch", 100, imu_switch_callback);
