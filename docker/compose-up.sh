@@ -38,7 +38,7 @@ if [ ! -f "$COMPOSE_FILE" ]; then
 fi
 
 echo "🧩 Using compose file: $COMPOSE_FILE"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --no-cache
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
 
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 

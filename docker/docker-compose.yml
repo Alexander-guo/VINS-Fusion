@@ -32,15 +32,15 @@ services:
       - QT_X11_NO_MITSHM=1
 
       # XAUTHORITY only if it exists locally (Docker will ignore if missing)
-      - XAUTHORITY=/home/${USER}/.Xauthority
-
+      - QT_QPA_PLATFORM=xcb
+      - XAUTHORITY=/tmp/.Xauthority
     volumes:
       # X11 forwarding for GUI tools like rviz, rqt, etc. (only matter if host uses X11)
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.Xauthority:/home/${USER}/.Xauthority:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:rw
 
       # dataset mount, modify as needed 
-      - ${HOME}/media/data:/media/data:rw
+      - /path/to/your/dataset/on/host:/media/data:rw
 
     command: [ "bash" ]
     tty: true

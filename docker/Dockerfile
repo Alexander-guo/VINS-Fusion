@@ -87,12 +87,15 @@ USER $USERNAME
 ENV TERM="xterm"
 ENV PYTHONIOENCODING="UTF-8"
 
-# # Debug: show workspace state before running catkin
-# RUN echo "[DEBUG] CATKIN_WS=$CATKIN_WS" && \
-#     echo "[DEBUG] ls /:" && ls -la / || true && \
-#     echo "[DEBUG] ls $CATKIN_WS:" && ls -la $CATKIN_WS || true && \
-#     echo "[DEBUG] env CATKIN_WS:" && env | grep CATKIN_WS || true && \
-#     echo "[DEBUG] whoami and id:" && whoami && id || true 
+# Use bash for subsequent RUN commands
+SHELL ["/bin/bash", "-c"]
+
+# Debug: show workspace state before running catkin
+RUN echo "[DEBUG] CATKIN_WS=$CATKIN_WS" && \
+    echo "[DEBUG] ls /:" && ls -la / || true && \
+    echo "[DEBUG] ls $CATKIN_WS:" && ls -la $CATKIN_WS || true && \
+    echo "[DEBUG] env CATKIN_WS:" && env | grep CATKIN_WS || true && \
+    echo "[DEBUG] whoami and id:" && whoami && id || true 
 
 # RUN catkin config \
 #       --extend /opt/ros/$ROS_DISTRO \
@@ -101,9 +104,10 @@ ENV PYTHONIOENCODING="UTF-8"
 #     sed -i '/exec "$@"/i \
 #       source "/catkin_ws/devel/setup.bash"' /ros_entrypoint.sh
 
-
-# Use bash for subsequent RUN commands
-SHELL ["/bin/bash", "-c"]
+RUN source "/opt/ros/$ROS_DISTRO/setup.bash" && \
+    catkin config --extend "/opt/ros/$ROS_DISTRO" --cmake-args -DCMAKE_BUILD_TYPE=Release && \
+    catkin build && \
+    echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bashrc
 
 # ====================================================================
 # Default command
