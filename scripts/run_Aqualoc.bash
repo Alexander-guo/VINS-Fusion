@@ -1,8 +1,18 @@
 #!/bin/bash
 
 DATASET_BAG_PATH=$1
-WS_PATH="/home/ws"
-AQUALOC_CONFIG_PATH="${WS_PATH}/src/VINS-Fusion/config/aqualoc"
+
+# Resolve workspace path for host or container
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
+DEFAULT_WS=$(cd "${REPO_ROOT}/../.." && pwd)
+WS_PATH="${CATKIN_WS:-${DEFAULT_WS}}"
+AQUALOC_CONFIG_PATH="${REPO_ROOT}/config/aqualoc"
+
+OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/.." && pwd)/VINS-FUSION_output
+
+# Make globbing for missing bags safe
+shopt -s nullglob
 
 run_VINS_FUSION() {
     local config_file="$1"
@@ -53,34 +63,54 @@ run_VINS_FUSION() {
 
     # Determine output directories based on configuration
     if [ "${is_mono_imu}" = true ]; then
-        POSE_DIR="${WS_PATH}/output/pose/VINS-Fusion_MonoIMU/${bag_name}"
-        TIME_DIR="${WS_PATH}/output/time/VINS-Fusion_MonoIMU/${bag_name}"
+        POSE_DIR="${OUTPUT_PATH}/pose/VINS-Fusion_MonoIMU/${bag_name}"
+        TIME_DIR="${OUTPUT_PATH}/time/VINS-Fusion_MonoIMU/${bag_name}"
     else
-        POSE_DIR="${WS_PATH}/output/pose/VINS-Fusion_StereoIMU/${bag_name}"
-        TIME_DIR="${WS_PATH}/output/time/VINS-Fusion_StereoIMU/${bag_name}"
+        POSE_DIR="${OUTPUT_PATH}/pose/VINS-Fusion_StereoIMU/${bag_name}"
+        TIME_DIR="${OUTPUT_PATH}/time/VINS-Fusion_StereoIMU/${bag_name}"
     fi
 
     # Create directories if they don't exist
     mkdir -p "${POSE_DIR}" "${TIME_DIR}"
 
     # Move output files if they exist
-    if [ -f "${WS_PATH}/output/vio.txt" ]; then
-        mv "${WS_PATH}/output/vio.txt" "${POSE_DIR}/vio.txt"
+    if [ -f "${OUTPUT_PATH}/vio.txt" ]; then
+        mv "${OUTPUT_PATH}/vio.txt" "${POSE_DIR}/vio.txt"
     else
-        echo "Warning: ${WS_PATH}/output/vio.txt not found"
+        echo "Warning: ${OUTPUT_PATH}/vio.txt not found"
     fi
-    if [ -f "${WS_PATH}/output/vio_time.txt" ]; then
-        mv "${WS_PATH}/output/vio_time.txt" "${TIME_DIR}/vio_time.txt"
+    if [ -f "${OUTPUT_PATH}/vio_time.txt" ]; then
+        mv "${OUTPUT_PATH}/vio_time.txt" "${TIME_DIR}/vio_time.txt"
     else
-        echo "Warning: ${WS_PATH}/output/vio_time.txt not found"
+        echo "Warning: ${OUTPUT_PATH}/vio_time.txt not found"
     fi
+}
+
+prepare_config() {
+    local src_config="$1"
+    local output_dir="$2"
+    local tmp_config
+    local config_dir
+    config_dir=$(cd "$(dirname "${src_config}")" && pwd)
+    tmp_config=$(mktemp "${config_dir}/.$(basename "${src_config}" .yaml).XXXXXX.yaml")
+
+    sed -E \
+        -e "s|^(output_path:).*$|\1 \"${output_dir}\"|" \
+        -e "s|^(pose_graph_save_path:).*$|\1 \"${output_dir}/pose_graph\"|" \
+        "${src_config}" > "${tmp_config}"
+
+    echo "${tmp_config}"
 }
 
 cd "${WS_PATH}" || exit 1
 source devel/setup.bash
 
-if [ ! -d "${WS_PATH}/output" ]; then
-    mkdir -p "${WS_PATH}/output"
+if [ ! -d "${WS_PATH}/logs" ]; then
+    mkdir -p "${WS_PATH}/logs"
+fi
+
+if [ ! -d "${OUTPUT_PATH}" ]; then
+    mkdir -p "${OUTPUT_PATH}"
 fi
 
 found_bag=0
@@ -91,7 +121,7 @@ for bag_file in "${DATASET_BAG_PATH}"/archaeo/bag_files/*.bag "${DATASET_BAG_PAT
     echo "Running bag file: ${bag_file}"
 
     # run mono imu setting only
-    if [ -d "${WS_PATH}/output/pose/VINS-Fusion_MonoIMU/${bag_name}" ] || [ -d "${WS_PATH}/output/time/VINS-Fusion_MonoIMU/${bag_name}" ]; then
+    if [ -d "${OUTPUT_PATH}/pose/VINS-Fusion_MonoIMU/${bag_name}" ] || [ -d "${OUTPUT_PATH}/time/VINS-Fusion_MonoIMU/${bag_name}" ]; then
         echo "Mono IMU output already exists. Skipping ..."
     else
         is_mono_imu=true
@@ -99,7 +129,9 @@ for bag_file in "${DATASET_BAG_PATH}"/archaeo/bag_files/*.bag "${DATASET_BAG_PAT
         if [[ "${bag_name}" == *"archaeo"* ]]; then
             config_file=${AQUALOC_CONFIG_PATH}/archaeo_mono_imu_config.yaml
         fi
-        run_VINS_FUSION "${config_file}" "${bag_file}" "${is_mono_imu}"
+        config_file_tmp=$(prepare_config "${config_file}" "${OUTPUT_PATH}")
+        run_VINS_FUSION "${config_file_tmp}" "${bag_file}" "${is_mono_imu}"
+        rm -f "${config_file_tmp}"
         echo "Completed mono imu setting for ${bag_file}"
         sleep 4
     fi
