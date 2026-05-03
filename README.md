@@ -32,6 +32,100 @@ alt="VINS" width="320" height="240" border="10" /></a>
 
 *If you use VINS-Fusion for your academic research, please cite our related papers. [bib](https://github.com/HKUST-Aerial-Robotics/VINS-Fusion/blob/master/support_files/paper_bib.txt)*
 
+# Benchmarking
+We evaluate VINS-Fusion on several public datasets, including EuRoC MAV, UZH-FPV, LaMAria, GrandTour and Aqualoc Dataset.
+
+## Quick Start Guide
+First, modify the mounted host dataset path in `docker/docker-compose.yml` in `volumes` field to your path accordingly. 
+
+To benchmark, the dataset should have the following structure:
+
+```YOUR_DATASET_FOLDER/
+├── YOUR_DATASET_FOLDER
+    ├── euroc
+    │   ├── bag 
+            ├── MH_01_easy.bag
+            ├── MH_02_easy.bag
+            ├── MH_03_medium.bag
+
+    ├── uzhfpv
+    │   ├── bag 
+            ├── indoor_45_12_snapdragon_with_gt.bag
+            ├── indoor_45_13_snapdragon_with_gt.bag
+            ├── indoor_45_14_snapdragon_with_gt.bag
+
+    ├── lamaria
+    │   ├── bag 
+            ├── data_seq_1
+                ├── rosbag
+                    ├── data_seq_1.bag
+
+    ├── grandtour
+    │   ├── bag 
+            ├── 2024-10-01-11-29-55.bag
+            ├── 2024-10-01-11-47-44.bag
+            ├── 2024-10-01-12-00-49.bag
+
+    ├── aqualoc
+    │   ├── bag 
+            ├── archaeo
+            │   ├── bag_files
+            │   │   ├── archaeo_sequence_1.bag
+            |       ├── archaeo_sequence_2.bag
+            |       ├── archaeo_sequence_3.bag
+            └── harbor
+                ├── bag_files
+                    ├── harbor_sequence_1.bag
+                    ├── harbor_sequence_2.bag
+                    ├── harbor_sequence_3.bag
+
+```
+
+Then, run the following command to start VINS-Fusion with docker:
+Make sure you have [docker](https://docs.docker.com/install/linux/docker-ce/ubuntu/) and [docker-compose](https://docs.docker.com/compose/install/) installed on your machine.
+```
+# build docker image and run container, at repo root path run
+chmod +x docker/compose-up.sh
+./docker/compose-up.sh
+```
+
+After the container is up, you can run VINS-Fusion with the following command on each dataset. 
+```
+# run Eurovc MAV dataset
+docker run -it -v /path/to/your/dataset/on/host:/media/data vins-fusion /bin/bash -lc "/catkin_ws/src/VINS-Fusion/scripts/run_EurocMAV.bash /media/data/<your_EurocMAV_folder_name>/bag"
+
+# run UZH-FPV dataset
+docker run -it -v /path/to/your/dataset/on/host:/media/data vins-fusion /bin/bash -lc "/catkin_ws/src/VINS-Fusion/scripts/run_UZHFPV.bash /media/data/<your_UZHFPV_folder_name>/bag"
+
+# run LaMAria dataset
+docker run -it -v /path/to/your/dataset/on/host:/media/data vins-fusion /bin/bash -lc "/catkin_ws/src/VINS-Fusion/scripts/run_LaMaria.bash /media/data/<your_LaMAria_folder_name>/bag"
+
+# run GrandTour dataset
+docker run -it -v /path/to/your/dataset/on/host:/media/data vins-fusion /bin/bash -lc "/catkin_ws/src/VINS-Fusion/scripts/run_GrandTour.bash /media/data/<your_GrandTour_folder_name>/bag"
+
+# run Aqualoc dataset
+docker run -it -v /path/to/your/dataset/on/host:/media/data vins-fusion /bin/bash -lc "/catkin_ws/src/VINS-Fusion/scripts/run_Aqualoc.bash /media/data/<your_Aqualoc_folder_name>/bag"
+```
+
+The output will be saved as following structure:
+```
+├── YOUR_DATASET_FOLDER
+    |── VINS-FUSION_output
+        ├── pose
+        │   └── VINS-Fusion_StereoIMU
+        │       ├── sequence_1
+        │       │   └── vio.txt
+        │       └── sequence_2
+        │           └── vio.txt
+        └── time
+            └── VINS-Fusion_StereoIMU
+                ├── sequence_1
+                │   └── vio_time.txt
+                └── sequence_2
+                    └── vio_time.txt
+```
+
+
 ## 1. Prerequisites
 ### 1.1 **Ubuntu** and **ROS**
 Ubuntu 64-bit 16.04 or 18.04.

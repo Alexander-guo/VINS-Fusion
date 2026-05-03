@@ -1,0 +1,98 @@
+%YAML:1.0
+
+#common parameters
+#support: 1 imu 1 cam; 1 imu 2 cam: 2 cam; 
+imu: 1         
+num_of_cam: 1  
+
+imu_topic: "/imu0"
+image0_topic: "/cam0/compressed"
+image1_topic: "/cam1/compressed"
+output_path: "/home/ws/output"
+
+cam0_calib: "alphasense_front_left_cam.yaml"
+cam1_calib: "alphasense_front_right_cam.yaml"
+
+image_width: 1440
+image_height: 1080
+   
+
+# Extrinsic parameter between IMU and Camera.
+estimate_extrinsic: 0   # 0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.
+                        # 1  Have an initial guess about extrinsic parameters. We will optimize around your initial guess.
+
+# cam0_T_boxbase (front left cam):
+#    rotation:
+#       w: 0.5368758638762299
+#       x: -0.45974498896225247
+#       y: -0.45019665401233916
+#       z: -0.5456389141431761
+#    translation:
+#       x: 0.10008743117500188
+#       y: -0.005044106160423112
+#       z: -0.3759478344493785
+
+# cam1_T_boxbase (front right cam):
+#    rotation:
+#       w: 0.5415552717416523
+#       x: -0.45428021832487614
+#       y: -0.45594501981218066
+#       z: -0.5407971059426985
+#    translation:
+#       x: -0.008591409149567839
+#       y: -0.004939215486247553
+#       z: -0.3747769505103547
+
+# imu_T_boxbase:
+#    rotation:
+#       w: 0.9992675697949326
+#       x: -0.00720142304148732
+#       y: -0.036738890418011295
+#       z: -0.007919431365965667
+#    translation:
+#       x: -0.3022307436356707
+#       y: 0.061798150722505
+#       z: -0.08410765585489798
+## calculate using: src/VINS-Fusion/scripts/GrandTour/rotation_transformation.py
+
+# Assume IMU coordinate is the body base frame (The following is actually imu_T_cam0 and imu_T_cam1)
+body_T_cam0: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+   data: [ 0.0142159, -0.243947,   0.9696844,  0.0596667,
+         0.9998893, -0.0007915, -0.0148578, -0.043868 ,
+         0.004392,   0.9697882,  0.2439087,  0.0120414,
+         0.0, 0.0, 0.0, 1.0]
+
+#Multiple thread support
+multiple_thread: 1
+
+#feature traker paprameters
+max_cnt: 150            # max feature number in feature tracking
+min_dist: 30            # min distance between two features 
+freq: 10                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
+F_threshold: 1.0        # ransac threshold (pixel)
+show_track: 1           # publish tracking image as topic
+flow_back: 1            # perform forward and backward optical flow to improve feature tracking accuracy
+
+#optimization parameters
+max_solver_time: 0.04  # max solver itration time (ms), to guarantee real time
+max_num_iterations: 8   # max solver itrations, to guarantee real time
+keyframe_parallax: 10.0 # keyframe selection threshold (pixel)
+
+#imu parameters       The more accurate parameters you provide, the better performance
+acc_n: 0.1          # accelerometer measurement noise standard deviation. 
+gyr_n: 0.01         # gyroscope measurement noise standard deviation.     
+acc_w: 0.001        # accelerometer bias random work noise standard deviation.  
+gyr_w: 0.0001       # gyroscope bias random work noise standard deviation.     
+g_norm: 9.806     # gravity magnitude
+
+#unsynchronization parameters
+estimate_td: 0                      # online estimate time offset between camera and imu
+td: 0           # initial value of time offset. unit: s. readed image clock + td = real image clock (IMU clock)
+
+#loop closure parameters
+load_previous_pose_graph: 0        # load and reuse previous pose graph; load from 'pose_graph_save_path'
+pose_graph_save_path: "/home/ws/output/pose_graph" # save and load path
+save_image: 1                   # save image in pose graph for visualization prupose; you can close this function by setting 0 

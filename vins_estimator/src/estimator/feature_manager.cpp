@@ -49,6 +49,26 @@ int FeatureManager::getFeatureCount()
 }
 
 
+/**
+ * @brief Add tracked features from the newest image frame and check whether
+ *        the average parallax satisfies the keyframe selection threshold.
+ *
+ * This routine inserts new feature observations from @p image into the
+ * internal feature list, updates per-frame tracking counters and statistics
+ * (e.g. `last_track_num`, `new_feature_num`, `long_track_num`), and computes
+ * the average parallax across long tracks. It is used to decide whether the
+ * current frame should be considered a keyframe based on parallax.
+ *
+ * @param frame_count Index of the current frame (incrementing frame counter).
+ * @param image Map from feature id -> vector of (camera_id, feature_vector).
+ *              Each feature_vector is an Eigen::Matrix<double,7,1> with
+ *              [x, y, z, p_u, p_v, velocity_x, velocity_y].
+ * @param td Time delay (timestamp offset) applied to feature observations.
+ * @return true if processing should continue without creating a keyframe
+ *         (i.e. parallax is too small or not enough tracks); false if the
+ *         average parallax exceeds the configured threshold and the frame is
+ *         suitable as a keyframe.
+ */
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td)
 {
     ROS_DEBUG("input feature: %d", (int)image.size());
