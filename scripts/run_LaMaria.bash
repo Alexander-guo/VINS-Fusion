@@ -12,7 +12,7 @@ LAMARIA_CONFIG_PATH="${REPO_ROOT}/config/lamaria"
 OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/../.." && pwd)/VINS-FUSION_output/lamaria
 
 # Make globbing for missing bags safe
-shopt -s nullglob
+shopt -s nullglob globstar
 
 run_VINS_FUSION() {
     local config_file="$1"
