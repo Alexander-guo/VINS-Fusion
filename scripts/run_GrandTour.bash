@@ -9,7 +9,7 @@ DEFAULT_WS=$(cd "${REPO_ROOT}/../.." && pwd)
 WS_PATH="${CATKIN_WS:-${DEFAULT_WS}}"
 GRANDTOUR_CONFIG_PATH="${REPO_ROOT}/config/grandtour"
 
-OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/.." && pwd)/VINS-FUSION_output
+OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/../.." && pwd)/VINS-FUSION_output/grand_tour
 
 # Make globbing for missing bags safe
 shopt -s nullglob
@@ -136,18 +136,18 @@ for bag_file in "${bags[@]}"; do
         sleep 4
     fi
 
-    # # run mono imu setting
-    # if [ -d "${OUTPUT_PATH}/pose/VINS-Fusion_MonoIMU/${bag_name}" ] || [ -d "${OUTPUT_PATH}/time/VINS-Fusion_MonoIMU/${bag_name}" ]; then
-    #     echo "Mono IMU output already exists. Skipping ..."
-    # else
-    #     is_mono_imu=true
-    #     config_file=${GRANDTOUR_CONFIG_PATH}/mono_imu_config.yaml
-    #     config_file_tmp=$(prepare_config "${config_file}" "${OUTPUT_PATH}")
-    #     run_VINS_FUSION "${config_file_tmp}" "${bag_file}" "${is_mono_imu}"
-    #     rm -f "${config_file_tmp}"
-    #     echo "Completed mono imu setting for ${bag_file}"
-    #     sleep 4
-    # fi
+    # run mono imu setting
+    if [ -d "${OUTPUT_PATH}/pose/VINS-Fusion_MonoIMU/${bag_name}" ] || [ -d "${OUTPUT_PATH}/time/VINS-Fusion_MonoIMU/${bag_name}" ]; then
+        echo "Mono IMU output already exists. Skipping ..."
+    else
+        is_mono_imu=true
+        config_file=${GRANDTOUR_CONFIG_PATH}/mono_imu_config.yaml
+        config_file_tmp=$(prepare_config "${config_file}" "${OUTPUT_PATH}")
+        run_VINS_FUSION "${config_file_tmp}" "${bag_file}" "${is_mono_imu}"
+        rm -f "${config_file_tmp}"
+        echo "Completed mono imu setting for ${bag_file}"
+        sleep 4
+    fi
 done
 
 echo "All bag files processed."

@@ -9,7 +9,7 @@ DEFAULT_WS=$(cd "${REPO_ROOT}/../.." && pwd)
 WS_PATH="${CATKIN_WS:-${DEFAULT_WS}}"
 EUROC_CONFIG_PATH="${REPO_ROOT}/config/euroc"
 
-OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/.." && pwd)/VINS-FUSION_output
+OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/../.." && pwd)/VINS-FUSION_output/euroc_mav
 
 # Make globbing for missing bags safe
 shopt -s nullglob
@@ -137,14 +137,14 @@ for bag_file in "${bags[@]}"; do
     echo "Completed stereo imu setting for ${bag_file}"
     sleep 4
 
-    # # run mono imu setting
-    # is_mono_imu=true
-    # config_file=${EUROC_CONFIG_PATH}/euroc_mono_imu_config.yaml
-    # config_file_tmp=$(prepare_config "${config_file}" "${OUTPUT_PATH}")
-    # run_VINS_FUSION "${config_file_tmp}" "${bag_file}" "${is_mono_imu}"
-    # rm -f "${config_file_tmp}"
-    # echo "Completed mono imu setting for ${bag_file}"
-    # sleep 4
+    # run mono imu setting
+    is_mono_imu=true
+    config_file=${EUROC_CONFIG_PATH}/euroc_mono_imu_config.yaml
+    config_file_tmp=$(prepare_config "${config_file}" "${OUTPUT_PATH}")
+    run_VINS_FUSION "${config_file_tmp}" "${bag_file}" "${is_mono_imu}"
+    rm -f "${config_file_tmp}"
+    echo "Completed mono imu setting for ${bag_file}"
+    sleep 4
 done
 
 echo "All bag files processed."

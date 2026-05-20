@@ -9,23 +9,23 @@ DEFAULT_WS=$(cd "${REPO_ROOT}/../.." && pwd)
 WS_PATH="${CATKIN_WS:-${DEFAULT_WS}}"
 UZHFPV_CONFIG_PATH="${REPO_ROOT}/config/uzhfpv"
 
-OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/.." && pwd)/VINS-FUSION_output
+OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/../.." && pwd)/VINS-FUSION_output/uzhfpv
 
 # Make globbing for missing bags safe
-shopt -s nullglob
+shopt -s nullglob globstar
 
 process_sequence_pair() {
     local bag_file="$1"
     local config_mono="$2"
     local config_stereo="$3"
 
-    # # run mono imu setting
-    # is_mono_imu=true 
-    # config_file_tmp=$(prepare_config "${config_mono}" "${OUTPUT_PATH}")
-    # run_VINS_FUSION "${config_file_tmp}" "${bag_file}" "${is_mono_imu}"
-    # rm -f "${config_file_tmp}"
-    # echo "Completed mono imu setting for ${bag_file}"
-    # sleep 4
+    # run mono imu setting
+    is_mono_imu=true 
+    config_file_tmp=$(prepare_config "${config_mono}" "${OUTPUT_PATH}")
+    run_VINS_FUSION "${config_file_tmp}" "${bag_file}" "${is_mono_imu}"
+    rm -f "${config_file_tmp}"
+    echo "Completed mono imu setting for ${bag_file}"
+    sleep 4
 
     # run stereo imu setting 
     is_mono_imu=false
@@ -131,7 +131,7 @@ if [ ! -d "${WS_PATH}/logs" ]; then
     mkdir -p "${WS_PATH}/logs"
 fi
 
-bags=("${DATASET_BAG_PATH}"/*.bag)
+bags=("${DATASET_BAG_PATH}"/**/*.bag)
 if [ ${#bags[@]} -eq 0 ]; then
     echo "No .bag files found in ${DATASET_BAG_PATH}"
     exit 1
