@@ -9,7 +9,7 @@ DEFAULT_WS=$(cd "${REPO_ROOT}/../.." && pwd)
 WS_PATH="${CATKIN_WS:-${DEFAULT_WS}}"
 LAMARIA_CONFIG_PATH="${REPO_ROOT}/config/lamaria"
 
-OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/.." && pwd)/VINS-FUSION_output
+OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/../.." && pwd)/VINS-FUSION_output/lamaria
 
 # Make globbing for missing bags safe
 shopt -s nullglob
@@ -109,27 +109,26 @@ if [ ! -d "${WS_PATH}/logs" ]; then
     mkdir -p "${WS_PATH}/logs"
 fi
 
+bags=("${DATASET_BAG_PATH}"/**/*.bag)
+if [ ${#bags[@]} -eq 0 ]; then
+    echo "No .bag files found in ${DATASET_BAG_PATH}"
+    exit 1
+fi
+
 if [ ! -d "${OUTPUT_PATH}" ]; then
     mkdir -p "${OUTPUT_PATH}"
 fi
 
-for data_seq in "${DATASET_BAG_PATH}"/*; do
-    [ ! -d "${data_seq}" ] && continue
-    
-    bag_file=$(find "${data_seq}/rosbag" -maxdepth 1 -name "*.bag" -type f | head -1)
-    if [ -z "$bag_file" ]; then
-        echo "Warning: No bag file found in ${data_seq}/rosbag, skipping"
-        continue
-    fi
+for bag_file in "${bags[@]}"; do
     bag_name=$(basename "${bag_file}" .bag)
 
     if [ -d "${OUTPUT_PATH}/pose/VINS-Fusion_MonoIMU/${bag_name}" ] || [ -d "${OUTPUT_PATH}/time/VINS-Fusion_MonoIMU/${bag_name}" ]; then
         echo "Output directory already exists. Skipping ${bag_name}."
         continue
     fi
-
     echo "Running bag file: ${bag_file}"
-    
+
+    ####### Comment out due to very limited common fov overlaps 
     # # run stereo imu setting
     # if [[ ${bag_name} == R_*_hard ]] || [[ ${bag_name} == sequence_1_* ]]; then
     #     # use different config for LaMaria_Indoor bags

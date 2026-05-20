@@ -9,7 +9,7 @@ DEFAULT_WS=$(cd "${REPO_ROOT}/../.." && pwd)
 WS_PATH="${CATKIN_WS:-${DEFAULT_WS}}"
 AQUALOC_CONFIG_PATH="${REPO_ROOT}/config/aqualoc"
 
-OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/.." && pwd)/VINS-FUSION_output
+OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/../.." && pwd)/VINS-FUSION_output/aqualoc
 
 # Make globbing for missing bags safe
 shopt -s nullglob
@@ -114,7 +114,7 @@ if [ ! -d "${OUTPUT_PATH}" ]; then
 fi
 
 found_bag=0
-for bag_file in "${DATASET_BAG_PATH}"/archaeo/bag_files/*.bag "${DATASET_BAG_PATH}"/harbor/bag_files/*.bag; do
+for bag_file in "${DATASET_BAG_PATH}"/archaeo/*.bag "${DATASET_BAG_PATH}"/harbor/*.bag; do
     [ -e "${bag_file}" ] || continue
     found_bag=1
     bag_name=$(basename "${bag_file}" .bag)
