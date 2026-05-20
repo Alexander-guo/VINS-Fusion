@@ -12,7 +12,7 @@ UZHFPV_CONFIG_PATH="${REPO_ROOT}/config/uzhfpv"
 OUTPUT_PATH=$(cd "${DATASET_BAG_PATH}/../.." && pwd)/VINS-FUSION_output/uzhfpv
 
 # Make globbing for missing bags safe
-shopt -s nullglob
+shopt -s nullglob globstar
 
 process_sequence_pair() {
     local bag_file="$1"
