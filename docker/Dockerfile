@@ -37,9 +37,6 @@ RUN if [ "$USERNAME" != "root" ]; then \
 ENV CERES_VERSION="1.12.0"
 ENV CATKIN_WS=/catkin_ws
 
-# set up thread number for building
-# RUN   if [ "x$(nproc)" = "x1" ] ; then export USE_PROC=1 ; \
-#       else export USE_PROC=$(($(nproc)/2)) ; fi && \
 RUN apt-get update && apt-get install -y \
     build-essential cmake \
     x11-apps mesa-utils libgl1 \
@@ -62,7 +59,6 @@ RUN git clone https://ceres-solver.googlesource.com/ceres-solver && \
     git checkout tags/${CERES_VERSION} && \
     mkdir build && cd build && \
     cmake .. && \
-    # make -j$(USE_PROC) install && \
     make -j"$(nproc)" install && \
     rm -rf ../../ceres-solver && \
     mkdir -p $CATKIN_WS/src/VINS-Fusion/
@@ -97,17 +93,15 @@ RUN echo "[DEBUG] CATKIN_WS=$CATKIN_WS" && \
     echo "[DEBUG] env CATKIN_WS:" && env | grep CATKIN_WS || true && \
     echo "[DEBUG] whoami and id:" && whoami && id || true 
 
-# RUN catkin config \
-#       --extend /opt/ros/$ROS_DISTRO \
-#       --cmake-args -DCMAKE_BUILD_TYPE=Release && \
-#     catkin build && \
-#     sed -i '/exec "$@"/i \
-#       source "/catkin_ws/devel/setup.bash"' /ros_entrypoint.sh
-
 RUN source "/opt/ros/$ROS_DISTRO/setup.bash" && \
     catkin config --extend "/opt/ros/$ROS_DISTRO" --cmake-args -DCMAKE_BUILD_TYPE=Release && \
     catkin build && \
     echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bashrc
+
+RUN python3 -m venv $CATKIN_WS/.venv && \
+    source $CATKIN_WS/.venv/bin/activate && \
+    pip install --no-cache-dir -r $CATKIN_WS/src/VINS-Fusion/requirements.txt && \
+    echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bashrc
 
 # ====================================================================
 # Default command
