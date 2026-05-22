@@ -147,7 +147,42 @@ The output will be saved as following structure under `/path/to/your/datasets/on
                         └── vio_time.txt
 ```
 
-## 4. Evaluation with [EPICA](https://epic-lab-gwu.github.io/EPIC-Alignment/)
+* Resource usage evaluation:
+```BASH
+# run resource usage evaluation script for Euroc MAV dataset
+docker run -it -v /path/to/your/datasets/on/host:/media/data vins-fusion /bin/bash -lc "/catkin_ws/src/VINS-Fusion/scripts/resource_usage_eval.bash /media/data/<resource_eval_dataset_folder_path>"
+```
+The resource usage evaluation script will run VINS-Fusion on all bag files in the specified dataset folder and save the output pose, time files and resource usage data (CPU, memory usage) under the folder `resource_res` with the following structure:
+```
+resource_eval
+├── datasets
+│   ├── 2024-11-15-11-37-15_compressed.bag
+│   ├── ...
+└── resource_res
+    ├── pose
+    │   ├── vinsfusion_mono
+    │   │   ├── 2024-11-15-11-37-15_compressed
+    │   │   │   └── vio.txt
+    │   │   ├── ...
+    │   └── vinsfusion_stereo
+    │       ├── ...
+    ├── resource
+    │   ├── vinsfusion_mono
+    │   │   ├── 2024-11-15-11-37-15_compressed
+    │   │   │   └── monitor_cpu_only.csv
+    │   │   ├── ...
+    │   └── vinsfusion_stereo
+    │       ├── ...
+    └── time
+        ├── vinsfusion_mono
+        │   ├── 2024-11-15-11-37-15_compressed
+        │   │   └── vio_time.txt
+        │   ├── ...
+        └── vinsfusion_stereo
+            ├── ...
+```
+
+## 4. Trajectory evaluation with [EPICA](https://epic-lab-gwu.github.io/EPIC-Alignment/)
 After you get the output pose files, you can evaluate the performance with [EPICA](https://epic-lab-gwu.github.io/EPIC-Alignment/). EPICA is a trajectory alignment and evaluation toolkit. To evaluate ATE and RPE, use the following command:
 
 ```bash
