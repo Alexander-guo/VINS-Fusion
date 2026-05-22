@@ -96,12 +96,14 @@ RUN echo "[DEBUG] CATKIN_WS=$CATKIN_WS" && \
 RUN source "/opt/ros/$ROS_DISTRO/setup.bash" && \
     catkin config --extend "/opt/ros/$ROS_DISTRO" --cmake-args -DCMAKE_BUILD_TYPE=Release && \
     catkin build && \
-    echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bashrc
+    echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bashrc && \
+    echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bash_profile
 
 RUN python3 -m venv $CATKIN_WS/.venv && \
     source $CATKIN_WS/.venv/bin/activate && \
     pip install --no-cache-dir -r $CATKIN_WS/src/VINS-Fusion/requirements.txt && \
-    echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bashrc
+    echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bashrc && \
+    echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bash_profile
 
 # ====================================================================
 # Default command
