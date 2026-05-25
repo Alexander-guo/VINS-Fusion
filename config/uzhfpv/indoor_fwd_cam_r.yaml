@@ -1,16 +1,15 @@
 %YAML:1.0
 ---
-model_type: PINHOLE
+model_type: KANNALA_BRANDT
 camera_name: camera
 image_width: 640 
 image_height: 480
-distortion_parameters:
-   k1: -0.00845693
-   k2: 0.01140759
-   p1: -0.00695179
-   p2: 0.00153681
 projection_parameters:
-   fx: 277.6164063
-   fy: 277.63749696
-   cx: 314.89447033
-   cy: 236.0431005
+  k2: -0.0084569316 
+  k3: 0.01140759
+  k4: -0.006951798
+  k5: 0.00153681
+  mu: 277.616406364 
+  mv: 277.63749696 
+  u0: 314.894470331
+  v0: 236.0431005
