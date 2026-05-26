@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y \
     build-essential cmake \
     x11-apps mesa-utils libgl1 \
     xterm vim gdb bash bash-completion wget curl unzip git tree \
+    python3-venv python3-pip \
     libatlas-base-dev \
     libeigen3-dev \
     libgoogle-glog-dev \
@@ -100,8 +101,8 @@ RUN source "/opt/ros/$ROS_DISTRO/setup.bash" && \
     echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bash_profile
 
 RUN python3 -m venv $CATKIN_WS/.venv && \
-    source $CATKIN_WS/.venv/bin/activate && \
-    pip install --no-cache-dir -r $CATKIN_WS/src/VINS-Fusion/requirements.txt && \
+    $CATKIN_WS/.venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
+        $CATKIN_WS/.venv/bin/pip install --no-cache-dir -r $CATKIN_WS/src/VINS-Fusion/requirements.txt && \
     echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bashrc && \
     echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bash_profile
 
