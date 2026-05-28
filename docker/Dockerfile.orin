@@ -1,0 +1,103 @@
+FROM ros:noetic-ros-base-focal
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- 1. Install System and ROS Dependencies ---
+ENV CATKIN_WS=/catkin_ws
+
+# We combine all apt-get commands into a single RUN block. 
+# This reduces the number of Docker image layers and speeds up builds.
+RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d && \
+  apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake \
+    x11-apps mesa-utils libgl1 \
+    xterm vim gdb bash bash-completion wget curl unzip git tree \
+    python3-venv python3-pip \
+    libatlas-base-dev \
+    libeigen3-dev \
+    libgoogle-glog-dev \
+    libsuitesparse-dev \
+    python3-catkin-tools \
+    libceres-dev \
+    ros-$ROS_DISTRO-cv-bridge \
+    ros-$ROS_DISTRO-image-transport \
+    ros-$ROS_DISTRO-message-filters \
+    ros-$ROS_DISTRO-tf \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p $CATKIN_WS/src/VINS-Fusion/
+
+
+# --- 2. Create Compiler Wrappers ---
+# These wrapper scripts intercept calls to GCC/G++ and filter out specific 
+# hardware architecture flags (like AVX, SSE, NEON). This is crucial when 
+# compiling code across different CPU architectures (e.g., compiling x86 
+# targeted code on an ARM-based Jetson Orin).
+RUN cat > /usr/local/bin/gcc-filter <<'EOF'
+#!/usr/bin/env bash
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    -mfpu=neon|-march=armv7-a|-mmmx|-msse|-msse2|-msse3|-mssse3|-mno-avx|-mavx|-mavx2|-mfma)
+      ;;
+    *)
+      args+=("$arg")
+      ;;
+  esac
+done
+exec /usr/bin/gcc "${args[@]}"
+EOF
+
+RUN cat > /usr/local/bin/gxx-filter <<'EOF'
+#!/usr/bin/env bash
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    -mfpu=neon|-march=armv7-a|-mmmx|-msse|-msse2|-msse3|-mssse3|-mno-avx|-mavx|-mavx2|-mfma)
+      ;;
+    *)
+      args+=("$arg")
+      ;;
+  esac
+done
+exec /usr/bin/g++ "${args[@]}"
+EOF
+
+# Make both wrapper scripts executable in a single command
+RUN chmod +x /usr/local/bin/gcc-filter /usr/local/bin/gxx-filter
+
+# Force the build environment to use these custom wrappers as the default compilers
+ENV CC=/usr/local/bin/gcc-filter
+ENV CXX=/usr/local/bin/gxx-filter    
+
+# --- 3. Set Up the Workspace Directory ---
+# WORKDIR automatically creates the directory if it doesn't exist and acts like 'cd'
+WORKDIR ${CATKIN_WS}
+
+# Copy VINS-Fusion as root so the files are created correctly
+COPY ./ $CATKIN_WS/src/VINS-Fusion/
+
+# Create venv and install Python dependencies after source is available
+RUN python3 -m venv $CATKIN_WS/.venv && \
+  $CATKIN_WS/.venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
+  $CATKIN_WS/.venv/bin/pip install --no-cache-dir -r $CATKIN_WS/src/VINS-Fusion/requirements.txt && \
+  echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bashrc && \
+  echo "source $CATKIN_WS/.venv/bin/activate" >> ~/.bash_profile
+
+# Initialize the workspace, and then applying our custom compiler arguments.
+RUN catkin init && \
+  catkin config --extend "/opt/ros/$ROS_DISTRO" --cmake-args \
+    -DCMAKE_C_COMPILER=/usr/local/bin/gcc-filter \
+    -DCMAKE_CXX_COMPILER=/usr/local/bin/gxx-filter \
+    -DCMAKE_BUILD_TYPE=Release
+
+# Build the workspace
+SHELL ["/bin/bash", "-c"]
+
+# Build the workspace
+RUN source "/opt/ros/$ROS_DISTRO/setup.bash" && \
+  catkin build && \
+  echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bashrc && \
+  echo "source $CATKIN_WS/devel/setup.bash" >> ~/.bash_profile
