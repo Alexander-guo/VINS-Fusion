@@ -95,6 +95,32 @@ Then, run the following command to build and run VINS-Fusion with docker:
 chmod +x docker/compose-up.sh
 ./docker/compose-up.sh
 ```
+
+If you want to run the container on Jetson/ARM edge devices, build the ARM64 image from `docker/Dockerfile.orin` and run it locally on the Jetson:
+```bash
+# at repo root
+
+# (optional) ensure buildx is available and selected
+docker buildx create --use --name vinsfusion-builder || docker buildx use vinsfusion-builder
+
+# build ARM64 image with the Jetson-specific Dockerfile
+docker buildx build -f docker/Dockerfile.orin \
+    --platform linux/arm64 \
+    -t vinsfusion-jetson:latest \
+    --load .
+
+# verify
+docker inspect vinsfusion-jetson:latest | grep Architecture
+# output as:
+# "Architecture": "arm64",
+
+# run the image on the Jetson (mount your datasets as needed)
+docker run -it --rm \
+    -v /path/to/your/datasets/on/host:/media/data \
+    --name vinsfusion-jetson \
+    vinsfusion-jetson:latest
+```
+
 ## 3. Run VINS-Fusion on datasets
 After the container is up, you can run VINS-Fusion with the following command on each dataset. 
 * Run in batch (recommended):
