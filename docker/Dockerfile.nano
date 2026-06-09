@@ -42,7 +42,7 @@ RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin
     ros-$ROS_DISTRO-message-filters \
     ros-$ROS_DISTRO-tf \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && rm -f /usr/sbin/policy-rc.d
 
 RUN mkdir -p $CATKIN_WS/src/VINS-Fusion/
 
