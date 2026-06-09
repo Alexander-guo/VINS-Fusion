@@ -104,21 +104,30 @@ If you want to run the container on Jetson/ARM edge devices, build the ARM64 ima
 docker buildx create --use --name vinsfusion-builder || docker buildx use vinsfusion-builder
 
 # build ARM64 image with the Jetson-specific Dockerfile
+# Jetson Orin
 docker buildx build -f docker/Dockerfile.orin \
     --platform linux/arm64 \
-    -t vinsfusion-jetson:latest \
+    -t vinsfusion-jetson-orin:latest \
+    --load .
+
+# or Jetson Nano
+docker buildx build -f docker/Dockerfile.nano \
+    --platform linux/arm64 \
+    -t vinsfusion-jetson-nano:latest \
     --load .
 
 # verify
-docker inspect vinsfusion-jetson:latest | grep Architecture
+docker inspect vinsfusion-jetson-orin:latest | grep Architecture
+# or
+docker inspect vinsfusion-jetson-nano:latest | grep Architecture
 # output as:
 # "Architecture": "arm64",
 
 # run the image on the Jetson (mount your datasets as needed)
 docker run -it --rm \
     -v /path/to/your/datasets/on/host:/media/data \
-    --name vinsfusion-jetson \
-    vinsfusion-jetson:latest
+    --name vinsfusion-jetson-orin \
+    vinsfusion-jetson-orin:latest
 ```
 
 ## 3. Run VINS-Fusion on datasets
