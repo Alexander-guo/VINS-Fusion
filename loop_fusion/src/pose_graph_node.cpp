@@ -15,6 +15,7 @@
 #include <nav_msgs/Path.h>
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/image_encodings.h>
 #include <visualization_msgs/Marker.h>
 #include <std_msgs/Bool.h>
@@ -35,7 +36,13 @@
 #define SKIP_FIRST_CNT 10
 using namespace std;
 
-queue<sensor_msgs::ImageConstPtr> image_buf;
+struct ImageData
+{
+    double stamp;
+    cv::Mat image;
+};
+
+queue<ImageData> image_buf;
 queue<sensor_msgs::PointCloudConstPtr> point_buf;
 queue<nav_msgs::Odometry::ConstPtr> pose_buf;
 queue<Eigen::Vector3d> odometry_buf;
@@ -73,16 +80,91 @@ double last_image_time = -1;
 
 ros::Publisher pub_point_cloud, pub_margin_cloud;
 
+void new_sequence();
+
+cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg)
+{
+    cv_bridge::CvImageConstPtr ptr;
+    if (img_msg->encoding == "8UC1")
+    {
+        sensor_msgs::Image img;
+        img.header = img_msg->header;
+        img.height = img_msg->height;
+        img.width = img_msg->width;
+        img.is_bigendian = img_msg->is_bigendian;
+        img.step = img_msg->step;
+        img.data = img_msg->data;
+        img.encoding = "mono8";
+        ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
+    }
+    else
+        ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
+
+    return ptr->image.clone();
+}
+
+cv::Mat getImageFromMsg(const sensor_msgs::CompressedImageConstPtr &img_msg)
+{
+    cv::Mat compressed(1, img_msg->data.size(), CV_8UC1, const_cast<uchar *>(img_msg->data.data()));
+    cv::Mat decoded = cv::imdecode(compressed, cv::IMREAD_UNCHANGED);
+
+    if (decoded.empty())
+    {
+        ROS_WARN("failed to decode compressed image at time %f", img_msg->header.stamp.toSec());
+        return cv::Mat();
+    }
+
+    cv::Mat gray;
+    if (decoded.channels() == 1)
+        gray = decoded;
+    else if (decoded.channels() == 3)
+        cv::cvtColor(decoded, gray, cv::COLOR_BGR2GRAY);
+    else if (decoded.channels() == 4)
+        cv::cvtColor(decoded, gray, cv::COLOR_BGRA2GRAY);
+    else
+    {
+        ROS_WARN("unsupported channel count in compressed image: %d", decoded.channels());
+        return cv::Mat();
+    }
+
+    if (gray.type() == CV_8UC1)
+        return gray.clone();
+
+    cv::Mat gray8;
+    if (gray.depth() == CV_16U)
+        gray.convertTo(gray8, CV_8UC1, 1.0 / 256.0);
+    else
+        gray.convertTo(gray8, CV_8UC1);
+    return gray8;
+}
+
+void handle_image(const cv::Mat &image, double stamp)
+{
+    m_buf.lock();
+    image_buf.push({stamp, image.clone()});
+    m_buf.unlock();
+
+    if (last_image_time == -1)
+        last_image_time = stamp;
+    else if (stamp < last_image_time)
+    {
+        ROS_WARN("image discontinue! detect a new sequence!");
+        new_sequence();
+    }
+    last_image_time = stamp;
+}
+
 void new_sequence()
 {
+    if (sequence >= 9)
+    {
+        ROS_WARN("sequence limit reached, ignore new sequence request");
+        return;
+    }
+
     printf("new sequence\n");
     sequence++;
     printf("sequence cnt %d \n", sequence);
-    if (sequence > 5)
-    {
-        ROS_WARN("only support 5 sequences since it's boring to copy code for more sequences.");
-        ROS_BREAK();
-    }
     posegraph.posegraph_visualization->reset();
     posegraph.publish();
     m_buf.lock();
@@ -97,23 +179,22 @@ void new_sequence()
     m_buf.unlock();
 }
 
-void image_callback(const sensor_msgs::ImageConstPtr &image_msg)
+void image_raw_callback(const sensor_msgs::ImageConstPtr &image_msg)
 {
-    //ROS_INFO("image_callback!");
-    m_buf.lock();
-    image_buf.push(image_msg);
-    m_buf.unlock();
-    //printf(" image time %f \n", image_msg->header.stamp.toSec());
+    cv::Mat image = getImageFromMsg(image_msg);
+    if (image.empty())
+        return;
 
-    // detect unstable camera stream
-    if (last_image_time == -1)
-        last_image_time = image_msg->header.stamp.toSec();
-    else if (image_msg->header.stamp.toSec() - last_image_time > 1.0 || image_msg->header.stamp.toSec() < last_image_time)
-    {
-        ROS_WARN("image discontinue! detect a new sequence!");
-        new_sequence();
-    }
-    last_image_time = image_msg->header.stamp.toSec();
+    handle_image(image, image_msg->header.stamp.toSec());
+}
+
+void image_compressed_callback(const sensor_msgs::CompressedImageConstPtr &image_msg)
+{
+    cv::Mat image = getImageFromMsg(image_msg);
+    if (image.empty())
+        return;
+
+    handle_image(image, image_msg->header.stamp.toSec());
 }
 
 void point_callback(const sensor_msgs::PointCloudConstPtr &point_msg)
@@ -246,7 +327,7 @@ void process()
 {
     while (true)
     {
-        sensor_msgs::ImageConstPtr image_msg = NULL;
+        ImageData image_data;
         sensor_msgs::PointCloudConstPtr point_msg = NULL;
         nav_msgs::Odometry::ConstPtr pose_msg = NULL;
 
@@ -254,26 +335,26 @@ void process()
         m_buf.lock();
         if(!image_buf.empty() && !point_buf.empty() && !pose_buf.empty())
         {
-            if (image_buf.front()->header.stamp.toSec() > pose_buf.front()->header.stamp.toSec())
+            if (image_buf.front().stamp > pose_buf.front()->header.stamp.toSec())
             {
                 pose_buf.pop();
                 printf("throw pose at beginning\n");
             }
-            else if (image_buf.front()->header.stamp.toSec() > point_buf.front()->header.stamp.toSec())
+            else if (image_buf.front().stamp > point_buf.front()->header.stamp.toSec())
             {
                 point_buf.pop();
                 printf("throw point at beginning\n");
             }
-            else if (image_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec() 
+            else if (image_buf.back().stamp >= pose_buf.front()->header.stamp.toSec() 
                 && point_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec())
             {
                 pose_msg = pose_buf.front();
                 pose_buf.pop();
                 while (!pose_buf.empty())
                     pose_buf.pop();
-                while (image_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
+                while (image_buf.front().stamp < pose_msg->header.stamp.toSec())
                     image_buf.pop();
-                image_msg = image_buf.front();
+                image_data = image_buf.front();
                 image_buf.pop();
 
                 while (point_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
@@ -306,23 +387,7 @@ void process()
                 skip_cnt = 0;
             }
 
-            cv_bridge::CvImageConstPtr ptr;
-            if (image_msg->encoding == "8UC1")
-            {
-                sensor_msgs::Image img;
-                img.header = image_msg->header;
-                img.height = image_msg->height;
-                img.width = image_msg->width;
-                img.is_bigendian = image_msg->is_bigendian;
-                img.step = image_msg->step;
-                img.data = image_msg->data;
-                img.encoding = "mono8";
-                ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
-            }
-            else
-                ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::MONO8);
-            
-            cv::Mat image = ptr->image;
+            cv::Mat image = image_data.image;
             // build keyframe
             Vector3d T = Vector3d(pose_msg->pose.pose.position.x,
                                   pose_msg->pose.pose.position.y,
@@ -479,7 +544,11 @@ int main(int argc, char **argv)
     }
 
     ros::Subscriber sub_vio = n.subscribe("/vins_estimator/odometry", 2000, vio_callback);
-    ros::Subscriber sub_image = n.subscribe(IMAGE_TOPIC, 2000, image_callback);
+    ros::Subscriber sub_image;
+    if (IMAGE_TOPIC.find("/compressed") != std::string::npos)
+        sub_image = n.subscribe(IMAGE_TOPIC, 2000, image_compressed_callback);
+    else
+        sub_image = n.subscribe(IMAGE_TOPIC, 2000, image_raw_callback);
     ros::Subscriber sub_pose = n.subscribe("/vins_estimator/keyframe_pose", 2000, pose_callback);
     ros::Subscriber sub_extrinsic = n.subscribe("/vins_estimator/extrinsic", 2000, extrinsic_callback);
     ros::Subscriber sub_point = n.subscribe("/vins_estimator/keyframe_point", 2000, point_callback);
